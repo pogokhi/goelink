@@ -2087,9 +2087,8 @@ const App = {
                 month: '월',
                 list: '목록'
             },
-            contentHeight: 'auto', // Adjust height to content, do not stretch
-            // height: '100%', // REMOVED: Caused unwanted vertical stretching
-            expandRows: false, // Do not force rows to fill vertical space
+            height: '100%', // Fill container for interior scroll on screen
+            expandRows: true, // Stretch rows to fill available space (memo space)
             dayMaxEvents: false,
             weekends: false, 
             firstDay: 1, // Start on Monday
@@ -2861,10 +2860,10 @@ const App = {
         }
         styleEl.textContent = `@page { size: ${size} ${orient}; margin: 10mm; }`;
 
-        // 6. Force Layout Update & Automatic Height for Print
-        // This is critical to prevent the calendar from collapsing to 0 height in print
+        // 6. Force Layout for Print: Expand fully without internal scroll
         if (this.state.calendar) {
             this.state.calendar.setOption('height', 'auto');
+            this.state.calendar.setOption('expandRows', false);
             this.state.calendar.updateSize();
         }
 
@@ -2880,10 +2879,12 @@ const App = {
 
             if (this.state.calendar) {
                 this.state.calendar.setOption('height', '100%');
+                this.state.calendar.setOption('expandRows', true);
                 if (viewType === 'list') {
                     this.state.calendar.changeView(window.innerWidth < 768 ? 'listWeek' : 'dayGridMonth');
                 }
                 this.state.calendar.updateSize();
+                this.distributeVerticalSpace(); // Recalculate if needed
             }
             window.removeEventListener('afterprint', cleanup);
         };
@@ -3677,7 +3678,7 @@ const App = {
 
         const container = document.createElement('div');
         container.className = "flex flex-col w-full justify-start items-stretch"; // Removed flex-grow
-        // container.style.height = "100%"; // REMOVED: Do not force full height
+        container.style.height = "100%"; // RESTORED: Force full height for sticky header track
         
         // MASKING: Ensure the whole cell is opaque white (or today color) to hide FullCalendar background events
         // This reinforces the "color restricted to header" rule.
@@ -3894,25 +3895,40 @@ const App = {
     // --- Logging System ---
 
     distributeVerticalSpace: function() {
-        requestAnimationFrame(() => {
+        if (this._distributeTimer) cancelAnimationFrame(this._distributeTimer);
+        this._distributeTimer = requestAnimationFrame(() => {
             const calendarEl = document.querySelector('#calendar');
-            if (!calendarEl) return;
+            if (!calendarEl || !this.state.calendar) return;
 
-            // 1. Reset bottom heights to 0 to measure natural content height
+            // Only run on Screen mode
+            if (document.body.classList.contains('printing-mode')) return;
+
+            // 1. Reset bottom heights to measure natural height
             const bottomEls = calendarEl.querySelectorAll('.fc-daygrid-day-bottom');
             bottomEls.forEach(el => el.style.height = '0px');
 
-            // 2. Measure Heights
+            // 2. Dynamic Measurement
             const windowHeight = window.innerHeight;
-            const navbar = document.querySelector('nav'); 
-            const footer = document.querySelector('footer'); // Assuming there is a footer tag
+            const mainContent = document.querySelector('#main-content');
+            if (!mainContent) return;
+
+            // Target Height: Space available for the calendar within the main container
+            const rect = mainContent.getBoundingClientRect();
+            const availableTotal = windowHeight - rect.top;
+
+            // Safety Margin (Buffer) to prevent accidental overflow
+            const safetyMargin = 30; 
+
+            // Sum up existing non-stretchable heights
             const toolbar = document.querySelector('.fc-header-toolbar');
             const colHeader = document.querySelector('.fc-col-header');
+            const footer = document.querySelector('footer');
             
-            const navH = navbar ? navbar.offsetHeight : 0;
-            const footH = footer ? footer.offsetHeight : 0;
             const toolH = toolbar ? toolbar.offsetHeight : 0;
             const headH = colHeader ? colHeader.offsetHeight : 0;
+            const footH = footer ? footer.offsetHeight : 0;
+            
+            const overhead = toolH + headH + footH + safetyMargin;
             
             // Get calendar rows to sum up actual content height
             const rows = document.querySelectorAll('.fc-daygrid-body table tr');
@@ -3923,21 +3939,24 @@ const App = {
                  contentH += row.offsetHeight;
             });
             
-            // 3. Calculate Remainder
-            // Margin buffer INCREASED (from 200 to 210) to act conservatively and avoid overflow
-            const occupied = navH + footH + toolH + headH + contentH + 210; 
-            const remainder = windowHeight - occupied;
+            // 3. Calculate Distribution
+            const remainder = availableTotal - (overhead + contentH);
 
-            // 4. Distribute if positive
-            if (remainder > 0) {
-                const rowCount = rows.length;
-                // Floor the value to ensure we don't exceed available space due to sub-pixel rendering
-                const heightPerWeek = Math.floor(remainder / rowCount);
+            // 4. Distribute space
+            const rowCount = rows.length;
+            const heightPerWeek = Math.floor(remainder / rowCount);
+            
+            // USER REQUEST: Minimum 60px for cell bottom (memo space)
+            const finalGap = Math.max(60, heightPerWeek);
 
-                bottomEls.forEach(el => {
-                    el.style.height = `${Math.max(0, heightPerWeek)}px`;
-                });
-            }
+            bottomEls.forEach(el => {
+                el.style.height = `${finalGap}px`;
+            });
+            
+            // Force FullCalendar to sync after we modified internal DOM
+            setTimeout(() => {
+                if (this.state.calendar) this.state.calendar.updateSize();
+            }, 50);
         });
     },
 

@@ -39,7 +39,7 @@ html {
     /* Content wrapper: DISABLE SCROLL here, let FullCalendar handle it */
     #main-content, #view-container {
         flex-grow: 1;
-        overflow: hidden; /* Changed from auto to hidden */
+        overflow: hidden !important; /* Force hidden to contain interior scroll */
         height: 100%; 
         min-height: 0;
         display: flex; /* Ensure FC fills it */
@@ -118,16 +118,22 @@ html {
     background-color: transparent !important;
 }
 
-/* Apply rounded corners & shadow ONLY to the grid (excluding toolbar) */
+/* Apply rounded corners & shadow to the grid */
 .fc .fc-scrollgrid {
     border-radius: 12px !important;
-    overflow: hidden !important;
+    /* overflow: hidden !important; REMOVED: Clipping bottom border */
     height: 100% !important;
     box-shadow:
         0 4px 6px -1px rgba(0, 0, 0, 0.1),
         0 2px 4px -1px rgba(0, 0, 0, 0.06);
     background: white;
-    border: 1px solid #e5e7eb; /* Ensure border is visible */
+    border: 1px solid #e5e7eb;
+}
+
+/* Ensure the last row has a visible bottom border using inset shadow (cannot be clipped) */
+.fc .fc-daygrid-body tr:last-child .fc-daygrid-day {
+    box-shadow: inset 0 -1px 0 0 #e5e7eb !important;
+    border-bottom: none !important; /* Use shadow instead */
 }
 /* Ensure all day cells in a row have equal height and fill the row */
 .fc-daygrid-day-frame {
