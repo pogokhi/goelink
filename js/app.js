@@ -2430,7 +2430,7 @@ const App = {
 
         if (btnPrint) {
             btnPrint.onclick = () => {
-                window.print();
+                this.openPrintModal('list');
             };
         }
 
@@ -2548,106 +2548,88 @@ const App = {
         end.setDate(end.getDate() + (weeks * 7) - 1); // Sunday of last week
 
         // Update Range Display
-        // Update Range Display
         const fmt = (d) => `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
-        let rangeStr = `${fmt(start)} ~ ${fmt(end)}`;
-
-        // HOLIDAY INFO IN HEADER
-        // Filter holidays within range
-        const settings = await this.fetchSettings(); // Use cached or fresh
+        const settings = await this.fetchSettings(); 
         const basicSchedules = settings.basic_schedules || [];
-        
-        const holidayInfos = [];
-        // Helper to check range overlap for header
-        const checkOverlapHeader = (evStart, evEnd, rangeStart, rangeEnd) => {
-            return (evStart <= rangeEnd.toISOString().split('T')[0] && (evEnd || evStart) >= rangeStart.toISOString().split('T')[0]);
+        const sName = settings.full_name_kr || settings.school_name || "학교명 미설정";
+
+        // Helper: Get Holiday String for a Date Range
+        const getHolidayString = (rStart, rEnd) => {
+            const hInfos = [];
+            const rStartStr = rStart.toISOString().split('T')[0];
+            const rEndStr = rEnd.toISOString().split('T')[0];
+            
+            basicSchedules.forEach(b => {
+                const isHoliday = b.is_holiday || b.type === 'holiday' || b.name.includes('재량휴업') || b.name.includes('대체공휴일');
+                if (isHoliday) {
+                    const bStart = b.start_date;
+                    const bEnd = b.end_date || b.start_date;
+                    if (bStart <= rEndStr && (bEnd || bStart) >= rStartStr) {
+                         const hDate = new Date(bStart);
+                         hInfos.push(`${hDate.getMonth() + 1}.${hDate.getDate()}: ${b.name}`);
+                    }
+                }
+            });
+            return hInfos.length > 0 ? ` <span style="color:red; font-size:11px; font-weight:normal;">(${hInfos.join(', ')})</span>` : '';
         };
 
-        basicSchedules.forEach(b => {
-             if (b.is_holiday || b.type === 'holiday' || b.name.includes('재량휴업') || b.name.includes('대체공휴일')) {
-                 // Check if in range
-                 const bStart = b.start_date;
-                 const bEnd = b.end_date || b.start_date;
-                 // Simple string compare sufficient for ISO dates? Yes.
-                 // rangeStart/End are Dates. Convert to YYYY-MM-DD
-                 const rStartStr = start.toISOString().split('T')[0];
-                 const rEndStr = end.toISOString().split('T')[0];
+        // Helper: Generate Page Header (Print & Screen)
+        const generateHeaderHtml = (rStart, rEnd, isScreenOnly = false, isPrintOnly = false) => {
+            const rangeBase = `${fmt(rStart)} ~ ${fmt(rEnd)}`;
+            const holidays = getHolidayString(rStart, rEnd);
+            const rangeFull = rangeBase + holidays;
+            
+            let html = '';
+            // Print Header
+            if (!isScreenOnly) {
+                html += `
+                    <div class="text-center mb-4 hidden print:block">
+                        <h1 class="text-3xl font-bold border-b-2 border-black pb-4 mb-2">주간 계획서</h1>
+                        <div class="flex justify-between items-end">
+                            <div class="text-[16px] font-bold">${rangeFull}</div>
+                            <div class="text-[16px] font-bold">${sName}</div>
+                        </div>
+                    </div>
+                `;
+            }
+            // Screen Header
+            if (!isPrintOnly) {
+                html += `
+                    <div class="text-center mb-8 print:hidden">
+                        <h1 class="text-3xl font-bold border-b-2 border-gray-800 pb-4 mb-2">주간 계획서</h1>
+                        <div class="flex justify-between items-end">
+                            <div class="text-[16px] font-bold text-gray-700">${rangeFull}</div>
+                            <div class="text-[16px] font-bold text-gray-700">${sName}</div>
+                        </div>
+                    </div>
+                `;
+            }
+            return html;
+        };
 
-                 if (checkOverlapHeader(bStart, bEnd, start, end)) {
-                     // Get precise date for display (start date usually)
-                     // If range, maybe show range? User asked for "MM.DD: Name"
-                     // Let's use start date formatted M.D
-                     const hDate = new Date(bStart);
-                     const m = hDate.getMonth() + 1;
-                     const d = hDate.getDate();
-                     holidayInfos.push(`${m}.${d}: ${b.name}`);
-                 }
-             }
-        });
-
-        if (holidayInfos.length > 0) {
-            rangeStr += ` <span style="color:red; font-size:11px;">(${holidayInfos.join(', ')})</span>`;
+        // Update Toolbar Range
+        if (rangeDisplay) {
+            rangeDisplay.innerHTML = `${fmt(start)} ~ ${fmt(end)}` + getHolidayString(start, end);
         }
-
-        if (rangeDisplay) rangeDisplay.innerHTML = rangeStr;
-        if (printRangeDisplay) printRangeDisplay.innerHTML = rangeStr;
-        if (screenRangeDisplay) screenRangeDisplay.innerHTML = rangeStr;
 
         // Sync Dropdowns
         const selYear = document.getElementById('list-nav-year');
         const selMonth = document.getElementById('list-nav-month');
         if (selYear && selMonth) {
-            // Check if year exists in options, if not add it (extended range handling)
-            // For now assume range is sufficient or just set if exists
-            // Sync Logic: Use Sunday of the first week to determine the "Week's Year/Month"
-            // This ensures weeks ending on the 1st of a month/year are attributed to that month/year.
             const targetDate = new Date(start);
-            targetDate.setDate(targetDate.getDate() + 6); // Move to Sunday
-            
+            targetDate.setDate(targetDate.getDate() + 6); // Sunday
             const y = targetDate.getFullYear();
             const m = targetDate.getMonth() + 1;
-            
-            // Auto expand year range if needed? For now simple set.
-            if (selYear.querySelector(`option[value="${y}"]`)) {
-                selYear.value = y;
-            } else {
-                 // Creating option on fly if out of range is nice but strict requirement was "Current +/- 2".
-                 // Let's just try to set it.
-                 selYear.value = y; 
-            }
+            if (selYear.querySelector(`option[value="${y}"]`)) selYear.value = y;
+            else selYear.value = y;
             selMonth.value = m;
         }
 
-        // 2. Fetch Data for Range
-        // Optimization: Create range fetch or just use all (cache?)
-        // For now, fetch all.
+        // 2. Fetch Data
         const schedules = await this.fetchSchedules();
-        // settings and basicSchedules already fetched above for header
-        
         const departments = this.state.departments || [];
 
-        // 3. Process Data
-        // We need:
-        // - Dates for the week (Mon-Sun)
-        // - For each date:
-        //   - Basic Events (Holidays, Terms, Major Events) -> "학교 행사" or Special Section?
-        //     -> Image shows "교무지원부", "3학년부" headers. 
-        //     -> Basic Events (e.g. 졸업식) usually don't have a department.
-        //     -> Strategy: Create a "Special" or "Official" department bucket for untagged events?
-        //     -> Actually, in 'transformEvents', we just have events. 
-        //     -> We need to group by Department.
-        //     -> If dept_id is null, it goes to "기타" or "학교행사"?
-        //     -> Image shows "교무지원부" (Admin Office).
-        //     -> 'basicSchedules' usually are School-wide. We can put them under "학교 행사" or "교무지원부" (if configured).
-        //     -> Let's map Basic Schedules to "교무지원부" (Admin Office) if it exists, or "학교 행사".
-        
-        let targetDeptIdForBasics = 'admin_office'; // Default to admin office for basic events
-        // Check if admin_office exists in depts
-        const adminDept = departments.find(d => d.dept_name === '행정실' || d.dept_name === '교무기획부' || d.dept_name === '교무지원부'); // Adjust matching
-        // Actually, user defined dept names.
-        // Let's create a virtual group for Basic Events if we can't map.
-
-        // Get Days Loop
+        // 3. Process Days
         const dates = [];
         let curr = new Date(start);
         const totalDays = weeks * 7;
@@ -2656,32 +2638,20 @@ const App = {
             curr.setDate(curr.getDate() + 1);
         }
 
-        // Prepare HTML Builder
-        const dayHtmls = []; // Store per-day HTML
+        const dayHtmls = []; 
         const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
 
-        // Helper to check range overlap
         const checkOverlap = (evStart, evEnd, targetDateStr) => {
             if (evStart === targetDateStr) return true;
             if (!evEnd) return false;
             return (targetDateStr >= evStart && targetDateStr <= evEnd);
         };
 
-        // Render Each Day
         for (const dateObj of dates) {
             const dateStr = this.formatLocal(dateObj);
             const dayName = dayNames[dateObj.getDay()];
             
-            // Filter Events for this Date
-            // 1. Regular Schedules
             const dailySchedules = schedules.filter(s => {
-                // Single day or Range
-                // Our schema: start_date, end_date (string YYYY-MM-DD or timestamptz?)
-                // App usually handles string.
-                // NOTE: DB is timestamptz usually, but app seems to handle YYYY-MM-DD strings mostly in logic.
-                // Let's assume strings from `fetchSchedules` or convert.
-                // Actually `fetchSchedules` returns DB rows.
-                // If it is timestamp, we need to format.
                 let sStart = s.start_date;
                 let sEnd = s.end_date || s.start_date;
                 if (sStart.includes('T')) sStart = sStart.split('T')[0];
@@ -2689,13 +2659,9 @@ const App = {
                 return checkOverlap(sStart, sEnd, dateStr);
             });
 
-            // 2. Basic Schedules (Holidays, Terms, Exams, Major Events)
             const dailyBasics = [];
             basicSchedules.forEach(b => {
-                if (b.type === 'term') return; // Skip term start markers usually? Image doesn't show them.
-                if (b.type === 'vacation') return; // Skip pure vacation markers usually.
-                
-                // Allow Holidays, Exams, Events
+                if (b.type === 'term' || b.type === 'vacation') return; 
                 const bStart = b.start_date;
                 const bEnd = b.end_date || b.start_date;
                 if (checkOverlap(bStart, bEnd, dateStr)) {
@@ -2703,79 +2669,28 @@ const App = {
                 }
             });
 
-            // If no events, should we show the day? 
-            // Image shows specific days. "2026년 01월 08일", "09일", "16일".
-            // It seems it shows ALL days or days with events?
-            // "Weekly Plan" usually shows all days. But blank days might be hidden to save space?
-            // Let's show all days for a "Weekly" plan.
-            // OR the image skips empty days? The dates are 8, 9, 16. That's not one week. 
-            // Ah, the image is spliced or shows filtered days.
-            // But title is "Weekly Plan".
-            // Let's show all days in the range. If empty, maybe show "일정 없음" or just header?
-            // Image design: Header -> Content.
-            // If empty, create empty box?
-            // Let's render header.
-
-            // Group by Dept
-            // Map: DeptID -> [Events]
             const groups = {};
-            
-            // 1. Process Schedules
             dailySchedules.forEach(s => {
-                const deptName = s.dept_name || '기타'; // Fallback
-                // We use Dept Name as key for grouping
+                const deptName = s.dept_name || '기타';
                 if (!groups[deptName]) groups[deptName] = [];
-                groups[deptName].push({
-                    title: s.title,
-                    desc: s.description,
-                    isBasic: false
-                });
+                groups[deptName].push({ title: s.title, desc: s.description });
             });
 
-            // 2. Process Basics
             if (dailyBasics.length > 0) {
-                // Where to put them? "교무지원부"? Or "학교 행사"?
-                // Let's find "교무" related dept.
                 let targetDept = departments.find(d => d.dept_name.includes('교무'));
                 const deptName = targetDept ? targetDept.dept_name : '학교 행사';
-                
                 if (!groups[deptName]) groups[deptName] = [];
                 dailyBasics.forEach(b => {
-                   let title = b.name || b.title; // Exams have title
-                   let desc = '';
-                   // Formatting: Exams
-                   if (b.type === 'exam') {
-                       title = `[고사] ${b.title}`;
-                   }
-                   if (b.is_holiday || b.type === 'holiday') {
-                       title = `[공휴일] ${b.name}`;
-                   }
-                   
-                   groups[deptName].push({
-                       title: title,
-                       desc: '',
-                       isBasic: true
-                   });
+                   let title = b.name || b.title;
+                   if (b.type === 'exam') title = `[고사] ${b.title}`;
+                   if (b.is_holiday || b.type === 'holiday') title = `[공휴일] ${b.name}`;
+                   groups[deptName].push({ title: title, desc: '' });
                 });
             }
 
-            // Skip if absolutely no events?
             const hasEvents = Object.keys(groups).length > 0;
-            const isEmptyWeek = false; // We might want to show empty days
+            const isRedDay = dateObj.getDay() === 0;
 
-            const isRedDay = dateObj.getDay() === 0; // Sunday
-            
-            // Sort Departments: "교무" first, then sort_order
-            const sortedDeptNames = Object.keys(groups).sort((a, b) => {
-                // Check sort_order from `departments`
-                const deptA = departments.find(d => d.dept_name === a);
-                const deptB = departments.find(d => d.dept_name === b);
-                const ordA = deptA ? deptA.sort_order : 999;
-                const ordB = deptB ? deptB.sort_order : 999;
-                return ordA - ordB;
-            });
-
-            // HTML Construction
             let dayHtml = '';
             if (hasEvents) {
                 const yearStr = dateObj.getFullYear();
@@ -2789,9 +2704,15 @@ const App = {
                                 ${yearStr}년 ${monthStr}월 ${dateNumStr}일 (${dayName}요일)
                             </span>
                         </div>
+                        <div class="space-y-4 pl-2">
                 `;
 
-                dayHtml += `<div class="space-y-4 pl-2">`;
+                const sortedDeptNames = Object.keys(groups).sort((a, b) => {
+                    const ordA = departments.find(d => d.dept_name === a)?.sort_order || 999;
+                    const ordB = departments.find(d => d.dept_name === b)?.sort_order || 999;
+                    return ordA - ordB;
+                });
+
                 sortedDeptNames.forEach(deptName => {
                     dayHtml += `
                         <div class="list-dept-group">
@@ -2801,46 +2722,59 @@ const App = {
                             <ul class="list-disc list-inside text-[11px] leading-[1.3] text-gray-700 pl-4 space-y-[3px]">
                     `;
                     groups[deptName].forEach(ev => {
-                        let content = `<span class="font-medium text-gray-900">${ev.title}</span>`;
-                        if (ev.desc) {
-                            content += ` <span class="text-gray-500 text-[11px] leading-[1.3]">(${ev.desc})</span>`;
-                        }
-                        dayHtml += `<li>${content}</li>`;
+                        dayHtml += `<li><span class="font-medium text-gray-900">${ev.title}</span>${ev.desc ? ` <span class="text-gray-500 text-[11px]">(${ev.desc})</span>` : ''}</li>`;
                     });
-                    dayHtml += `
-                            </ul>
-                        </div>
-                    `;
+                    dayHtml += `</ul></div>`;
                 });
-                dayHtml += `</div>`;
-                dayHtml += `</div>`; // End main block
+                dayHtml += `</div></div>`;
             }
             dayHtmls.push(dayHtml);
         }
 
-        // Assembly
+        // 4. Assembly
         let finalHtml = '';
         if (weeks === 1) {
-            // 2-Column Flow for 1-Week View (Print)
             finalHtml = `
+                ${generateHeaderHtml(start, end)}
                 <div class="list-1week-print-cols">
                     ${dayHtmls.join('')}
                 </div>
             `;
         } else {
-            // 2 Weeks - Split Columns
+            const w1Start = new Date(start);
+            const w1End = new Date(start); w1End.setDate(w1End.getDate() + 6);
+            const w2Start = new Date(start); w2Start.setDate(w2Start.getDate() + 7);
+            const w2End = new Date(start); w2End.setDate(w2End.getDate() + 13);
+            
             const week1Html = dayHtmls.slice(0, 7).join('');
             const week2Html = dayHtmls.slice(7, 14).join('');
-            
+
             finalHtml = `
-                <div class="grid grid-cols-1 print:grid-cols-2 md:grid-cols-2 gap-8 items-start">
-                    <div class="list-col-week1">${week1Html}</div>
-                    <div class="list-col-week2">${week2Html}</div>
+                <!-- Screen Version -->
+                <div class="print:hidden">
+                    ${generateHeaderHtml(start, end)}
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+                        <div class="list-col-week1">${week1Html}</div>
+                        <div class="list-col-week2">${week2Html}</div>
+                    </div>
+                </div>
+
+                <!-- Print Version -->
+                <div class="hidden print:block">
+                    <div>
+                        ${generateHeaderHtml(w1Start, w1End, false, true)}
+                        <div class="list-1week-print-cols">${week1Html}</div>
+                    </div>
+                    <div style="break-before: page;">
+                        ${generateHeaderHtml(w2Start, w2End, false, true)}
+                        <div class="list-1week-print-cols">${week2Html}</div>
+                    </div>
                 </div>
             `;
         }
 
         container.innerHTML = finalHtml;
+
     },
 
     // --- Data Fetching ---
@@ -3440,7 +3374,7 @@ const App = {
 
     // --- Print Logic ---
 
-    openPrintModal: async function () {
+    openPrintModal: async function (mode = 'calendar') {
         const modalContainer = document.getElementById('modal-container');
         try {
             if (!this.state.templates['print']) {
@@ -3450,6 +3384,24 @@ const App = {
             }
             modalContainer.innerHTML = this.state.templates['print'];
             modalContainer.classList.remove('invisible');
+            
+            // Handle Mode
+            if (mode === 'list') {
+                const viewInput = document.querySelector('input[name="print-view"]');
+                if (viewInput) viewInput.value = 'weekly_plan'; // Distinguish from 'list' (calendar listMonth)
+                
+                const viewTitle = document.getElementById('print-view-title'); 
+                if (viewTitle) viewTitle.textContent = '리스트형 (주간 계획서)';
+
+                const viewIcon = document.getElementById('print-view-icon');
+                if (viewIcon) viewIcon.textContent = 'summarize';
+
+                // Default A4 Portrait for Weekly Plan usually
+                const orientSelect = document.getElementById('print-orient');
+                if (orientSelect) orientSelect.value = 'portrait';
+                const sizeSelect = document.getElementById('print-size');
+                if (sizeSelect) sizeSelect.value = 'A4';
+            }
         } catch (e) {
             console.error("Failed to load print modal", e);
             alert('인쇄 설정을 불러올 수 없습니다. (' + e.message + ')');
@@ -3476,7 +3428,7 @@ const App = {
     executePrint: async function (size, orient, isScale, viewType) {
         this.closeModal();
 
-        // 1. Fetch School Settings for Header
+        // 1. Fetch School Settings for Header (Mainly for Calendar view, but good to have)
         let schoolDisplayName = '';
         try {
             const settings = await this.fetchSettings(this.state.currentYear);
@@ -3488,7 +3440,9 @@ const App = {
         }
 
         // 2. Prepare View
-        if (this.state.calendar) {
+        if (viewType === 'weekly_plan') {
+            // No need to change calendar view, we are already in Weekly Plan
+        } else if (this.state.calendar) {
             if (viewType === 'list') {
                 this.state.calendar.changeView('listMonth');
             } else {
@@ -3496,19 +3450,22 @@ const App = {
             }
         }
 
-        // 3. Inject Print-Only Header (Directly to Body to avoid layout inheritance)
-        let printHeader = document.querySelector('.print-only-header');
-        if (!printHeader) {
-            printHeader = document.createElement('div');
-            printHeader.className = 'print-only-header';
-            document.body.prepend(printHeader);
-        }
+        // 3. Inject Print-Only Header (ONLY FOR CALENDAR VIEWS)
+        let printHeader = null;
+        if (viewType !== 'weekly_plan') {
+            printHeader = document.querySelector('.print-only-header');
+            if (!printHeader) {
+                printHeader = document.createElement('div');
+                printHeader.className = 'print-only-header';
+                document.body.prepend(printHeader);
+            }
 
-        const calendarTitle = document.querySelector('.fc-toolbar-title')?.textContent || '';
-        printHeader.innerHTML = `
-            <div class="print-header-left">${calendarTitle}</div>
-            <div class="print-header-right">${schoolDisplayName}</div>
-        `;
+            const calendarTitle = document.querySelector('.fc-toolbar-title')?.textContent || '';
+            printHeader.innerHTML = `
+                <div class="print-header-left">${calendarTitle}</div>
+                <div class="print-header-right">${schoolDisplayName}</div>
+            `;
+        }
 
         // 4. Apply Classes to Body
         const body = document.body;
@@ -3526,10 +3483,11 @@ const App = {
             styleEl.id = styleId;
             document.head.appendChild(styleEl);
         }
-        styleEl.textContent = `@page { size: ${size} ${orient}; margin: 10mm; }`;
+        // USER REQUEST: margin 10mm
+        styleEl.textContent = `@page { size: ${size} ${orient}; margin: 10mm !important; }`;
 
         // 6. Force Layout for Print: Expand fully without internal scroll
-        if (this.state.calendar) {
+        if (viewType !== 'weekly_plan' && this.state.calendar) {
             this.state.calendar.setOption('height', 'auto');
             this.state.calendar.setOption('expandRows', false);
             this.state.calendar.updateSize();
@@ -3545,7 +3503,7 @@ const App = {
             if (styleEl) styleEl.remove();
             if (printHeader) printHeader.remove();
 
-            if (this.state.calendar) {
+            if (this.state.calendar && viewType !== 'weekly_plan') {
                 this.state.calendar.setOption('height', '100%');
                 this.state.calendar.setOption('expandRows', true);
                 if (viewType === 'list') {

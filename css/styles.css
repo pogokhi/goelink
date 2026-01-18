@@ -396,7 +396,6 @@ html {
 @media print {
 
     /* Root visibility and height reset */
-    html,
     body {
         height: auto !important;
         min-height: 0 !important;
@@ -404,24 +403,12 @@ html {
         background-color: white !important;
         margin: 0 !important;
         padding: 0 !important;
-        counter-reset: page;
-        /* Initialize page counter */
     }
 
-    /* Page numbering footer */
-    body::after {
-        content: "- " counter(page) " -";
-        counter-increment: page;
-        position: fixed;
-        bottom: 5mm;
-        left: 0;
-        right: 0;
-        text-align: center;
-        font-size: 10pt;
-        color: #666;
-        z-index: 10000;
-        pointer-events: none;
+    #list-view-printable {
+        overflow: hidden !important; /* Prevent tiny overflows from creating blank pages */
     }
+
 
     #app,
     #main-content,
@@ -891,11 +878,35 @@ html {
         gap: 2rem !important;
     }
 
+
     /* 1-Week Column Support (Flow) */
     .list-1week-print-cols {
         column-count: 2 !important;
         column-gap: 2rem !important;
         width: 100% !important;
+        column-fill: auto !important; /* USER REQUEST: Fill Col 1 first to use more space */
+    }
+
+    /* Space optimization */
+    #list-view-container {
+        gap: 0 !important;
+        margin: 0 !important;
+    }
+
+    /* Paper Specific Heights to guide 'column-fill: auto' */
+    /* Further reduced heights (approx -10mm) to be perfectly safe against manual header overflows */
+    .print-a4 .list-1week-print-cols { height: 200mm !important; }
+    .print-b4 .list-1week-print-cols { height: 265mm !important; }
+    .print-a3 .list-1week-print-cols { height: 335mm !important; }
+
+    /* Paper Specific Max-Widths */
+    .print-a4 #list-view-printable { max-width: 190mm !important; }
+    .print-b4 #list-view-printable { max-width: 230mm !important; }
+    .print-a3 #list-view-printable { max-width: 277mm !important; }
+
+    .list-day-block {
+        margin-bottom: 24px !important;
+        break-inside: avoid;
     }
 }
 

@@ -2,7 +2,7 @@
     <!-- Top Toolbar -->
     <div class="flex items-center justify-between bg-white rounded-lg shadow p-3 no-print flex-shrink-0">
         <div class="flex items-center gap-4">
-            <h2 class="text-lg font-bold text-gray-800" id="list-view-title">주간 계획서</h2>
+            <h2 class="text-lg font-bold text-gray-800" id="list-view-title">&nbsp;주간 계획서</h2>
             <div class="flex items-center gap-2">
                 <button id="btn-list-prev" class="p-1 hover:bg-gray-100 rounded text-gray-600 transition flex justify-center items-center">
                     <span class="material-symbols-outlined">chevron_left</span>
@@ -43,24 +43,6 @@
     <div class="flex-grow bg-white rounded-lg shadow p-8 min-h-0 overflow-y-auto" id="list-view-content-wrapper">
         <!-- Printable Area -->
         <div id="list-view-printable" class="max-w-4xl mx-auto">
-            <!-- Header for Print -->
-            <div class="text-center mb-8 hidden print:block">
-                <h1 class="text-3xl font-bold border-b-2 border-black pb-4 mb-2">주간 계획서</h1>
-                <div class="flex justify-between items-end">
-                    <div class="text-[16px] font-bold" id="list-print-date-range"></div>
-                    <div class="text-[16px] font-bold" id="list-school-name"></div>
-                </div>
-            </div>
-            
-             <!-- Web Header (Visible only on screen if needed, but we have toolbar) -->
-            <div class="text-center mb-8 print:hidden">
-                <h1 class="text-3xl font-bold border-b-2 border-gray-800 pb-4 mb-2">주간 계획서</h1>
-                <div class="flex justify-between items-end">
-                    <div class="text-[16px] font-bold text-gray-700" id="list-screen-date-range"></div>
-                    <div class="text-[16px] font-bold text-gray-700" id="list-school-name-screen"></div>
-                </div>
-            </div>
-
             <!-- Content -->
             <div id="list-view-container" class="space-y-6">
                 <!-- Dynamic Content Injected Here -->
