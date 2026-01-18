@@ -16,7 +16,11 @@ window.SupabaseClient = {
             return;
         }
 
-        this.supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        this.supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            auth: {
+                storage: sessionStorage,
+            },
+        });
         console.log("🔌 Supabase Client Initialized");
     }
 };

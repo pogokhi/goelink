@@ -118,6 +118,25 @@ html {
     /* purple-100 (slightly more visible) */
 }
 
+/* Ensure all buttons (icons vs text) have equal height */
+.fc .fc-button {
+    height: 34px !important;
+    line-height: 1 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 12px !important;
+}
+
+/* Remove focus outline/shadow */
+.fc .fc-button:focus,
+.fc .fc-button:active,
+.fc .fc-button:focus-visible {
+    box-shadow: none !important;
+    outline: none !important;
+    border-color: var(--fc-border-color) !important;
+}
+
 /* Today Priority: Ensure today's color is always top priority */
 .fc .fc-day-today {
     background-color: var(--fc-today-bg-color) !important;
@@ -827,3 +846,56 @@ html {
     color: #9ca3af !important;
     /* gray-400 */
 }
+/* --- List View Styles --- */
+
+.list-day-block {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 50px;
+}
+
+.list-dept-group {
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+#list-view-content-wrapper {
+    scrollbar-gutter: stable;
+}
+
+/* Print Specific for List View */
+@media print {
+    #list-view-content-wrapper {
+        overflow: visible !important;
+        height: auto !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+    }
+
+    #list-view-printable {
+        max-width: 100% !important;
+        width: 100% !important;
+    }
+    
+
+    .list-day-block {
+        border: none;
+        margin-bottom: 50px;
+        break-inside: avoid;
+    }
+
+    /* 2-Week Column Support (Hard Split) */
+    .grid-cols-1.print\:grid-cols-2 {
+        display: grid !important;
+        grid-template-columns: 1fr 1fr !important;
+        gap: 2rem !important;
+    }
+
+    /* 1-Week Column Support (Flow) */
+    .list-1week-print-cols {
+        column-count: 2 !important;
+        column-gap: 2rem !important;
+        width: 100% !important;
+    }
+}
+

@@ -10,6 +10,7 @@ const App = {
         status: null, // 'active' | 'pending'
         currentYear: new Date().getFullYear(),
         viewMode: 'calendar', // 'calendar', 'list'
+        listViewStart: null, // Start Date of current list week view
         departments: [], // Cached Departments
         templates: {}, // Cached Modal Templates
     },
@@ -313,6 +314,16 @@ const App = {
             } catch (e) {
                 console.error("Failed to load calendar", e);
                 container.innerHTML = `<p class="text-red-500">캘린더 로딩 실패</p>`;
+            }
+        } else if (viewName === 'list') {
+            try {
+                const response = await fetch('pages/list.html');
+                const html = await response.text();
+                container.innerHTML = html;
+                this.initListView();
+            } catch (e) {
+                console.error("Failed to load list view", e);
+                container.innerHTML = `<p class="text-red-500">목록 로딩 실패</p>`;
             }
         } else if (viewName === 'login') {
             try {
@@ -2077,16 +2088,48 @@ const App = {
         const calendar = new FullCalendar.Calendar(calendarEl, {
             initialView: window.innerWidth < 768 ? 'listWeek' : 'extendedMonth',
             locale: 'ko',
-            headerToolbar: {
-                left: 'prev,next today',
-                center: 'title',
-                right: 'extendedMonth,listWeek'
-            },
             buttonText: {
                 today: '오늘',
                 month: '월',
                 extendedMonth: '월',
                 list: '목록'
+            },
+            customButtons: {
+                 // We don't use FC list view, so we override the button behavior or use custom Toolbar
+                 // But simply, we can use the 'listWeek' button to trigger our view if we want, 
+                 // OR we just add a custom button.
+                 // Actually, FC header toolbar buttons for views switch FC views.
+                 // To switch to OUR 'list' view, we should probably add a custom button or 
+                 // rely on the top-level navigation if we had one.
+                 // Current UI has 'extendedMonth,listWeek' in right header.
+                 // Let's hijack 'listWeek' button click? No, FC handles it.
+                customPrev: {
+                    icon: 'chevron-left',
+                    click: () => {
+                        const current = this.state.calendar.getDate();
+                        const target = new Date(current.getFullYear(), current.getMonth() - 1, 1);
+                        this.state.calendar.gotoDate(target);
+                    }
+                },
+                customNext: {
+                    icon: 'chevron-right',
+                    click: () => {
+                        const current = this.state.calendar.getDate();
+                        const target = new Date(current.getFullYear(), current.getMonth() + 1, 1);
+                        this.state.calendar.gotoDate(target);
+                    }
+                },
+                customList: {
+                    text: '목록',
+                    click: () => {
+                        this.navigate('list');
+                    }
+                 }
+            },
+            headerToolbar: {
+                left: 'customPrev,customNext today',
+                center: 'title',
+                right: 'extendedMonth,customList' // Use our custom button
             },
             height: '100%', // Fill container for interior scroll on screen
             expandRows: true, // Stretch rows to fill available space (memo space)
@@ -2330,6 +2373,360 @@ const App = {
         if (btnPrint) {
             btnPrint.onclick = () => this.openPrintModal();
         }
+    },
+
+    // --- List View Logic ---
+
+    initListView: async function () {
+        // 1. Initial State
+        const today = new Date();
+        const d = new Date(today);
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust to Monday
+        const monday = new Date(d.setDate(diff));
+        
+        if (!this.state.listViewStart) {
+            this.state.listViewStart = monday;
+        }
+        if (!this.state.listViewWeeks) {
+            this.state.listViewWeeks = 1; // Default 1 week
+        }
+
+        // 2. Fetch Data (Settings & Depts)
+        const settings = await this.fetchSettings();
+        // Set School Name
+        const schoolNameEl = document.getElementById('list-school-name');
+        const schoolNameScreenEl = document.getElementById('list-school-name-screen');
+        // Prefer full_name_kr > school_name > "학교"
+        const sName = settings.full_name_kr || settings.school_name || "학교명 미설정";
+        if (schoolNameEl) schoolNameEl.textContent = sName;
+        if (schoolNameScreenEl) schoolNameScreenEl.textContent = sName;
+
+        this.state.departments = await this.fetchDepartments();
+
+        // 3. Bind Controls
+        const btnPrev = document.getElementById('btn-list-prev');
+        const btnNext = document.getElementById('btn-list-next');
+        const btnToday = document.getElementById('btn-list-today');
+        const btnPrint = document.getElementById('btn-list-print');
+        const btnCalendar = document.getElementById('btn-list-calendar'); // New Button
+
+        const moveWeek = (offset) => {
+            const current = new Date(this.state.listViewStart);
+            current.setDate(current.getDate() + (offset * 7));
+            this.state.listViewStart = current;
+            this.renderListView();
+        };
+
+        if (btnPrev) btnPrev.onclick = () => moveWeek(-1);
+        if (btnNext) btnNext.onclick = () => moveWeek(1);
+        if (btnToday) btnToday.onclick = () => {
+            const t = new Date();
+            const day = t.getDay();
+            const diff = t.getDate() - day + (day === 0 ? -6 : 1);
+            this.state.listViewStart = new Date(t.setDate(diff));
+            this.renderListView();
+        };
+
+        if (btnPrint) {
+            btnPrint.onclick = () => {
+                window.print();
+            };
+        }
+
+        if (btnCalendar) {
+            btnCalendar.onclick = () => {
+                this.navigate('calendar');
+            };
+        }
+
+        // 1-Week / 2-Week Toggle
+        const btn1Week = document.getElementById('btn-list-1week');
+        const btn2Weeks = document.getElementById('btn-list-2weeks');
+
+        const updateToggleUI = () => {
+            const is2Weeks = this.state.listViewWeeks === 2;
+            if (btn1Week) {
+                btn1Week.className = is2Weeks 
+                    ? "px-2 py-0.5 text-xs font-medium rounded text-gray-500 hover:text-gray-900" 
+                    : "px-2 py-0.5 text-xs font-medium rounded bg-white shadow text-gray-800";
+            }
+            if (btn2Weeks) {
+                btn2Weeks.className = is2Weeks 
+                    ? "px-2 py-0.5 text-xs font-medium rounded bg-white shadow text-gray-800"
+                    : "px-2 py-0.5 text-xs font-medium rounded text-gray-500 hover:text-gray-900";
+            }
+        };
+
+        if (btn1Week) {
+            btn1Week.onclick = () => {
+                this.state.listViewWeeks = 1;
+                updateToggleUI();
+                this.renderListView();
+            };
+        }
+        if (btn2Weeks) {
+            btn2Weeks.onclick = () => {
+                this.state.listViewWeeks = 2;
+                updateToggleUI();
+                this.renderListView();
+            };
+        }
+        updateToggleUI();
+
+        // 4. Render
+        await this.renderListView();
+    },
+
+    renderListView: async function () {
+        const container = document.getElementById('list-view-container');
+        if (!container) return;
+
+        // Visual Feedback
+        container.innerHTML = '<div class="flex justify-center p-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div></div>';
+        const rangeDisplay = document.getElementById('list-date-range');
+        const printRangeDisplay = document.getElementById('list-print-date-range');
+        const screenRangeDisplay = document.getElementById('list-screen-date-range');
+
+        // 1. Calculate Week Range
+        const weeks = this.state.listViewWeeks || 1;
+        const start = new Date(this.state.listViewStart);
+        // Correct for Monday start if needed, but state.listViewStart is usually Mon 00:00
+        const end = new Date(start);
+        end.setDate(end.getDate() + (weeks * 7) - 1); // Sunday of last week
+
+        // Update Range Display
+        const fmt = (d) => `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
+        const rangeStr = `${fmt(start)} ~ ${fmt(end)}`;
+
+        if (rangeDisplay) rangeDisplay.textContent = rangeStr;
+        if (printRangeDisplay) printRangeDisplay.textContent = rangeStr;
+        if (screenRangeDisplay) screenRangeDisplay.textContent = rangeStr;
+
+        // 2. Fetch Data for Range
+        // We use the same generic fetch but filtering is done in memory for now as we don't have range query in fetchSchedules yet
+        // Optimization: Create range fetch or just use all (cache?)
+        // For now, fetch all.
+        const schedules = await this.fetchSchedules();
+        const settings = await this.fetchSettings(); // For holidays
+        const basicSchedules = settings.basic_schedules || [];
+        const departments = this.state.departments || [];
+
+        // 3. Process Data
+        // We need:
+        // - Dates for the week (Mon-Sun)
+        // - For each date:
+        //   - Basic Events (Holidays, Terms, Major Events) -> "학교 행사" or Special Section?
+        //     -> Image shows "교무지원부", "3학년부" headers. 
+        //     -> Basic Events (e.g. 졸업식) usually don't have a department.
+        //     -> Strategy: Create a "Special" or "Official" department bucket for untagged events?
+        //     -> Actually, in 'transformEvents', we just have events. 
+        //     -> We need to group by Department.
+        //     -> If dept_id is null, it goes to "기타" or "학교행사"?
+        //     -> Image shows "교무지원부" (Admin Office).
+        //     -> 'basicSchedules' usually are School-wide. We can put them under "학교 행사" or "교무지원부" (if configured).
+        //     -> Let's map Basic Schedules to "교무지원부" (Admin Office) if it exists, or "학교 행사".
+        
+        let targetDeptIdForBasics = 'admin_office'; // Default to admin office for basic events
+        // Check if admin_office exists in depts
+        const adminDept = departments.find(d => d.dept_name === '행정실' || d.dept_name === '교무기획부' || d.dept_name === '교무지원부'); // Adjust matching
+        // Actually, user defined dept names.
+        // Let's create a virtual group for Basic Events if we can't map.
+
+        // Get Days Loop
+        const dates = [];
+        let curr = new Date(start);
+        const totalDays = weeks * 7;
+        for(let i=0; i<totalDays; i++) {
+            dates.push(new Date(curr));
+            curr.setDate(curr.getDate() + 1);
+        }
+
+        // Prepare HTML Builder
+        const dayHtmls = []; // Store per-day HTML
+        const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+
+        // Helper to check range overlap
+        const checkOverlap = (evStart, evEnd, targetDateStr) => {
+            if (evStart === targetDateStr) return true;
+            if (!evEnd) return false;
+            return (targetDateStr >= evStart && targetDateStr <= evEnd);
+        };
+
+        // Render Each Day
+        for (const dateObj of dates) {
+            const dateStr = this.formatLocal(dateObj);
+            const dayName = dayNames[dateObj.getDay()];
+            
+            // Filter Events for this Date
+            // 1. Regular Schedules
+            const dailySchedules = schedules.filter(s => {
+                // Single day or Range
+                // Our schema: start_date, end_date (string YYYY-MM-DD or timestamptz?)
+                // App usually handles string.
+                // NOTE: DB is timestamptz usually, but app seems to handle YYYY-MM-DD strings mostly in logic.
+                // Let's assume strings from `fetchSchedules` or convert.
+                // Actually `fetchSchedules` returns DB rows.
+                // If it is timestamp, we need to format.
+                let sStart = s.start_date;
+                let sEnd = s.end_date || s.start_date;
+                if (sStart.includes('T')) sStart = sStart.split('T')[0];
+                if (sEnd.includes('T')) sEnd = sEnd.split('T')[0];
+                return checkOverlap(sStart, sEnd, dateStr);
+            });
+
+            // 2. Basic Schedules (Holidays, Terms, Exams, Major Events)
+            const dailyBasics = [];
+            basicSchedules.forEach(b => {
+                if (b.type === 'term') return; // Skip term start markers usually? Image doesn't show them.
+                if (b.type === 'vacation') return; // Skip pure vacation markers usually.
+                
+                // Allow Holidays, Exams, Events
+                const bStart = b.start_date;
+                const bEnd = b.end_date || b.start_date;
+                if (checkOverlap(bStart, bEnd, dateStr)) {
+                    dailyBasics.push(b);
+                }
+            });
+
+            // If no events, should we show the day? 
+            // Image shows specific days. "2026년 01월 08일", "09일", "16일".
+            // It seems it shows ALL days or days with events?
+            // "Weekly Plan" usually shows all days. But blank days might be hidden to save space?
+            // Let's show all days for a "Weekly" plan.
+            // OR the image skips empty days? The dates are 8, 9, 16. That's not one week. 
+            // Ah, the image is spliced or shows filtered days.
+            // But title is "Weekly Plan".
+            // Let's show all days in the range. If empty, maybe show "일정 없음" or just header?
+            // Image design: Header -> Content.
+            // If empty, create empty box?
+            // Let's render header.
+
+            // Group by Dept
+            // Map: DeptID -> [Events]
+            const groups = {};
+            
+            // 1. Process Schedules
+            dailySchedules.forEach(s => {
+                const deptName = s.dept_name || '기타'; // Fallback
+                // We use Dept Name as key for grouping
+                if (!groups[deptName]) groups[deptName] = [];
+                groups[deptName].push({
+                    title: s.title,
+                    desc: s.description,
+                    isBasic: false
+                });
+            });
+
+            // 2. Process Basics
+            if (dailyBasics.length > 0) {
+                // Where to put them? "교무지원부"? Or "학교 행사"?
+                // Let's find "교무" related dept.
+                let targetDept = departments.find(d => d.dept_name.includes('교무'));
+                const deptName = targetDept ? targetDept.dept_name : '학교 행사';
+                
+                if (!groups[deptName]) groups[deptName] = [];
+                dailyBasics.forEach(b => {
+                   let title = b.name || b.title; // Exams have title
+                   let desc = '';
+                   // Formatting: Exams
+                   if (b.type === 'exam') {
+                       title = `[고사] ${b.title}`;
+                   }
+                   if (b.is_holiday || b.type === 'holiday') {
+                       title = `[공휴일] ${b.name}`;
+                   }
+                   
+                   groups[deptName].push({
+                       title: title,
+                       desc: '',
+                       isBasic: true
+                   });
+                });
+            }
+
+            // Skip if absolutely no events?
+            const hasEvents = Object.keys(groups).length > 0;
+            const isEmptyWeek = false; // We might want to show empty days
+
+            const isRedDay = dateObj.getDay() === 0; // Sunday
+            
+            // Sort Departments: "교무" first, then sort_order
+            const sortedDeptNames = Object.keys(groups).sort((a, b) => {
+                // Check sort_order from `departments`
+                const deptA = departments.find(d => d.dept_name === a);
+                const deptB = departments.find(d => d.dept_name === b);
+                const ordA = deptA ? deptA.sort_order : 999;
+                const ordB = deptB ? deptB.sort_order : 999;
+                return ordA - ordB;
+            });
+
+            // HTML Construction
+            let dayHtml = '';
+            if (hasEvents) {
+                const yearStr = dateObj.getFullYear();
+                const monthStr = String(dateObj.getMonth() + 1).padStart(2,'0');
+                const dateNumStr = String(dateObj.getDate()).padStart(2,'0');
+                
+                dayHtml += `
+                    <div class="list-day-block break-inside-avoid">
+                        <div class="border-t-[3px] border-black bg-white pt-1 px-1 mb-2">
+                            <span class="text-[12px] leading-[1.3] font-bold ${isRedDay ? 'text-red-600' : 'text-gray-900'}">
+                                ${yearStr}년 ${monthStr}월 ${dateNumStr}일 (${dayName}요일)
+                            </span>
+                        </div>
+                `;
+
+                dayHtml += `<div class="space-y-4 pl-2">`;
+                sortedDeptNames.forEach(deptName => {
+                    dayHtml += `
+                        <div class="list-dept-group">
+                            <div class="font-bold text-[11px] leading-[1.3] text-gray-800 mb-1 flex items-center gap-1">
+                                <span class="text-[11px]">◈</span> ${deptName}
+                            </div>
+                            <ul class="list-disc list-inside text-[11px] leading-[1.3] text-gray-700 pl-4 space-y-[3px]">
+                    `;
+                    groups[deptName].forEach(ev => {
+                        let content = `<span class="font-medium text-gray-900">${ev.title}</span>`;
+                        if (ev.desc) {
+                            content += ` <span class="text-gray-500 text-[11px] leading-[1.3]">(${ev.desc})</span>`;
+                        }
+                        dayHtml += `<li>${content}</li>`;
+                    });
+                    dayHtml += `
+                            </ul>
+                        </div>
+                    `;
+                });
+                dayHtml += `</div>`;
+                dayHtml += `</div>`; // End main block
+            }
+            dayHtmls.push(dayHtml);
+        }
+
+        // Assembly
+        let finalHtml = '';
+        if (weeks === 1) {
+            // 2-Column Flow for 1-Week View (Print)
+            finalHtml = `
+                <div class="list-1week-print-cols">
+                    ${dayHtmls.join('')}
+                </div>
+            `;
+        } else {
+            // 2 Weeks - Split Columns
+            const week1Html = dayHtmls.slice(0, 7).join('');
+            const week2Html = dayHtmls.slice(7, 14).join('');
+            
+            finalHtml = `
+                <div class="grid grid-cols-1 print:grid-cols-2 md:grid-cols-2 gap-8 items-start">
+                    <div class="list-col-week1">${week1Html}</div>
+                    <div class="list-col-week2">${week2Html}</div>
+                </div>
+            `;
+        }
+
+        container.innerHTML = finalHtml;
     },
 
     // --- Data Fetching ---
@@ -2953,7 +3350,10 @@ const App = {
             const size = document.getElementById('print-size').value;
             const orient = document.getElementById('print-orient').value;
             const isScale = document.getElementById('print-scale').checked;
-            const viewType = document.querySelector('input[name="print-view"]:checked').value;
+            
+            // Fixed: Handle both Radio (checked) and Hidden input types
+            const viewInput = document.querySelector('input[name="print-view"]:checked') || document.querySelector('input[name="print-view"]');
+            const viewType = viewInput ? viewInput.value : 'calendar';
 
             this.executePrint(size, orient, isScale, viewType);
         };
@@ -4117,9 +4517,10 @@ const App = {
             });
 
             // Force FullCalendar to sync after we modified internal DOM
-            setTimeout(() => {
-                if (this.state.calendar) this.state.calendar.updateSize();
-            }, 50);
+            // REMOVED: updateSize() causes infinite resize loop in some conditions
+            // setTimeout(() => {
+            //     if (this.state.calendar) this.state.calendar.updateSize();
+            // }, 50);
         });
     },
 

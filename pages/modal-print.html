@@ -16,18 +16,12 @@
             <!-- 1. View Type -->
             <div>
                 <label class="block text-gray-700 text-sm font-bold mb-2">출력 형태</label>
-                <div class="grid grid-cols-2 gap-3">
+                <div class="grid grid-cols-1 gap-3">
                     <label
-                        class="border rounded p-3 flex flex-col items-center justify-center gap-2 cursor-pointer hover:bg-gray-50 has-[:checked]:border-purple-600 has-[:checked]:bg-purple-50 transition">
+                        class="border rounded p-3 flex flex-col items-center justify-center gap-2 cursor-pointer bg-purple-50 border-purple-600 transition">
                         <input type="radio" name="print-view" value="calendar" checked class="hidden">
                         <span class="material-symbols-outlined text-gray-500">calendar_month</span>
                         <span class="text-sm font-medium">달력형 (월간)</span>
-                    </label>
-                    <label
-                        class="border rounded p-3 flex flex-col items-center justify-center gap-2 cursor-pointer hover:bg-gray-50 has-[:checked]:border-purple-600 has-[:checked]:bg-purple-50 transition">
-                        <input type="radio" name="print-view" value="list" class="hidden">
-                        <span class="material-symbols-outlined text-gray-500">table_rows</span>
-                        <span class="text-sm font-medium">리스트형 (월간)</span>
                     </label>
                 </div>
             </div>
@@ -60,10 +54,6 @@
                         class="rounded text-purple-600 focus:ring-purple-500">
                     <span class="text-sm text-gray-700">1페이지에 맞추기 (자동 축소)</span>
                 </label>
-            </div>
-
-            <div class="text-xs text-gray-400 bg-gray-50 p-2 rounded">
-                *'리스트형'은 브라우저 인쇄 미리보기 설정에서 '배경 그래픽' 옵션을 체크해야 색상이 올바르게 나옵니다.
             </div>
         </div>
 
