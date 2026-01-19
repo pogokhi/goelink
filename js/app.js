@@ -408,10 +408,6 @@ const App = {
                 btn.innerHTML = '로그인';
             }
         };
-
-        document.getElementById('btn-signup').onclick = () => {
-            alert('초기 가입은 관리자가 생성해준 계정을 사용하거나, 별도 가입 페이지를 이용해야 합니다.');
-        };
     },
 
     initAdminView: async function () {
@@ -3621,14 +3617,31 @@ const App = {
                 const monthSel = document.getElementById('print-dept-month');
                 if (monthSel) {
                     const now = new Date();
+                    const viewedDate = this.state.deptViewDate || now;
+                    const vY = viewedDate.getFullYear();
+                    const vM = viewedDate.getMonth();
+
                     monthSel.innerHTML = '';
                     for (let m = -2; m <= 6; m++) {
                         const d = new Date(now.getFullYear(), now.getMonth() + m, 1);
                         const opt = document.createElement('option');
                         opt.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
                         opt.textContent = `${d.getFullYear()}년 ${d.getMonth() + 1}월`;
-                        if (m === 0) opt.selected = true;
+                        
+                        // Set default to currently viewed month
+                        if (d.getFullYear() === vY && d.getMonth() === vM) {
+                            opt.selected = true;
+                        }
                         monthSel.appendChild(opt);
+                    }
+                    
+                    // If viewedDate was not in the -2 to +6 range, add it as first option and select it
+                    if (monthSel.selectedIndex === -1) {
+                        const opt = document.createElement('option');
+                        opt.value = `${vY}-${String(vM + 1).padStart(2, '0')}`;
+                        opt.textContent = `${vY}년 ${vM + 1}월`;
+                        opt.selected = true;
+                        monthSel.prepend(opt);
                     }
                     
                     const f2 = document.getElementById('print-dept-front2');
