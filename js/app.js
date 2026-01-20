@@ -147,16 +147,50 @@ const App = {
         }
     },
 
+    // Helper: Capture Current Date from Active View
+    captureCurrentDate: function() {
+        // If we are currently in a view, capture its date to state
+        if (this.state.viewMode === 'calendar' && this.state.calendar) {
+            return this.state.calendar.getDate();
+        } 
+        if (this.state.viewMode === 'dept_list' && this.state.deptViewDate) {
+            return new Date(this.state.deptViewDate);
+        }
+        if (this.state.viewMode === 'list' && this.state.listViewStart) {
+            // Use the Representative Date (e.g. Wednesday of the week)
+            // so if we switch to month view, we land on the correct month
+            const d = new Date(this.state.listViewStart);
+            d.setDate(d.getDate() + 3);
+            return d;
+        }
+        return new Date(); // Default to Now
+    },
+
     navigate: function (viewName, replace = false) {
+        // [SYNC] Capture date from current view before switching
+        const sharedDate = this.captureCurrentDate();
+
+        // [SYNC] Propagate to Target View State
+        if (viewName === 'calendar') {
+            this.state.initialDate = sharedDate;
+        } else if (viewName === 'dept_list') {
+            // Set 1st of month for Dept View logic usually, but specific date is fine
+            this.state.deptViewDate = sharedDate;
+        } else if (viewName === 'list') {
+            // Calculate Monday of the week containing sharedDate
+            const d = new Date(sharedDate);
+            const day = d.getDay();
+            const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust to Monday
+            this.state.listViewStart = new Date(d.setDate(diff));
+            this.state.listViewWeeks = this.state.listViewWeeks || 1; // Maintain week count preference
+        }
+
         this.state.viewMode = viewName;
         localStorage.setItem('pogok_last_view', viewName);
 
         if (replace) {
-            // Already handled state via replaceState in init usually, or we just loadView
-            // Update state object but keep URL clean (no hash)
             history.replaceState({ view: viewName }, '', window.location.pathname);
         } else {
-            // Push new state with View data, but keep URL clean
             history.pushState({ view: viewName }, '', window.location.pathname);
         }
 
@@ -2103,6 +2137,7 @@ const App = {
         // 2. Setup FullCalendar
         const calendar = new FullCalendar.Calendar(calendarEl, {
             initialView: 'extendedMonth',
+            initialDate: this.state.initialDate || undefined, // [SYNC] Use synchronized date
             locale: 'ko',
             buttonText: {
                 today: '오늘',
@@ -2340,6 +2375,9 @@ const App = {
 
         this.state.calendar = calendar;
         calendar.render();
+
+        // [SYNC] Clear initialDate so it doesn't stick
+        this.state.initialDate = null;
 
         // Force size update for flexbox environments
         // Force size update for flexbox environments
@@ -2625,6 +2663,7 @@ const App = {
             const rEndStr = rEnd.toISOString().split('T')[0];
             
             basicSchedules.forEach(b => {
+                if (b.weekend === null) return; // Skip if weekend column is explicit NULL (User Request)
                 const isHoliday = b.is_holiday || b.type === 'holiday' || b.name.includes('재량휴업') || b.name.includes('대체공휴일');
                 if (isHoliday) {
                     const bStart = b.start_date;
@@ -2707,12 +2746,25 @@ const App = {
             const dateStr = this.formatLocal(dateObj);
             const dayName = dayNames[dateObj.getDay()];
             
+            const isDayOff = !this.isSchoolDay(dateObj, basicSchedules);
+
             const dailySchedules = schedules.filter(s => {
                 let sStart = s.start_date;
                 let sEnd = s.end_date || s.start_date;
                 if (sStart.includes('T')) sStart = sStart.split('T')[0];
                 if (sEnd.includes('T')) sEnd = sEnd.split('T')[0];
-                return checkOverlap(sStart, sEnd, dateStr);
+                
+                const overlaps = checkOverlap(sStart, sEnd, dateStr);
+                if (!overlaps) return false;
+
+                // Holiday/Weekend Filter:
+                // If it is a non-school day (Weekend or Holiday), 
+                // ONLY show schedules that have 'weekend' flag set.
+                if (isDayOff && !s.weekend) {
+                    return false;
+                }
+
+                return true;
             });
 
             const dailyBasics = [];
@@ -2736,11 +2788,19 @@ const App = {
                 let targetDept = departments.find(d => d.dept_name.includes('교무'));
                 const deptName = targetDept ? targetDept.dept_name : '학교 행사';
                 if (!groups[deptName]) groups[deptName] = [];
+                
+                // [FIX] Deduplication for Exam Blocks (prevent 4 lines for same exam)
+                const addedTitles = new Set();
+                
                 dailyBasics.forEach(b => {
                    let title = b.name || b.title;
-                   if (b.type === 'exam') title = `[고사] ${b.title}`;
+                   if (b.type === 'exam') title = `[고사] ${b.name}`; // [FIX] Use b.name instead of b.title
                    if (b.is_holiday || b.type === 'holiday') title = `[공휴일] ${b.name}`;
-                   groups[deptName].push({ title: title, desc: '' });
+                   
+                   if (!addedTitles.has(title)) {
+                       groups[deptName].push({ title: title, desc: '' });
+                       addedTitles.add(title);
+                   }
                 });
             }
 
@@ -2764,8 +2824,8 @@ const App = {
                 `;
 
                 const sortedDeptNames = Object.keys(groups).sort((a, b) => {
-                    const ordA = departments.find(d => d.dept_name === a)?.sort_order || 999;
-                    const ordB = departments.find(d => d.dept_name === b)?.sort_order || 999;
+                    const ordA = departments.find(d => d.dept_name === a)?.sort_order ?? 999;
+                    const ordB = departments.find(d => d.dept_name === b)?.sort_order ?? 999;
                     return ordA - ordB;
                 });
 
