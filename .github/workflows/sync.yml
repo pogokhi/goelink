@@ -8,7 +8,7 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    if: github.repository == 'pogokhi/GOELink'
+    if: github.repository == 'pogokhi/goelink'
     steps:
       - name: Checkout 🛎️
         uses: actions/checkout@v4
