@@ -5873,6 +5873,7 @@ const App = {
             // Add (오늘) Label
             if (arg.isToday) {
                 const todaySpan = document.createElement('span');
+                todaySpan.className = 'fc-today-label'; // Added for print control
                 todaySpan.style.display = 'inline-block';
                 todaySpan.style.fontSize = '10px';
                 todaySpan.style.fontWeight = 'bold';
