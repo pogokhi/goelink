@@ -4120,12 +4120,9 @@ const App = {
                 // Remove leading "◈ chars " pattern if present
                 cleanTitle = cleanTitle.replace(/^◈\s*\S+\s*/, '');
 
-                // User Request: Always display Full Name (dept_name) on both Screen and Print
-                const prefixHtml = `◈ ${dName} `;
-
                 events.push({
                     id: s.id,
-                    title: prefixHtml + cleanTitle,
+                    title: cleanTitle,
                     start: s.start_date,
                     end: s.end_date,
                     backgroundColor: dept.dept_color || '#3788d8',
