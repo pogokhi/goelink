@@ -214,26 +214,19 @@
         margin: 0 !important;
         box-sizing: border-box !important;
         
-        /* [FIX] Use RIGHT and BOTTOM borders for internal grid */
-        /* Leads to a clean 'individual cell' look when combined with :first-child left border */
-        border-right: 1px solid #ddd !important;
-        border-bottom: 1px solid #ddd !important;
-        border-left: none !important;
+        /* [FIX] Use BOTH LEFT and RIGHT borders (1px) */
+        /* In border-collapse: collapse, these 1px borders will merge. */
+        /* Having both ensures the browser always draws the boundary even if one side has a background color. */
+        border-left: 1px solid #999 !important;
+        border-right: 1px solid #999 !important;
+        border-bottom: 1px solid #999 !important;
         border-top: none !important;
-    }
-
-    /* [NEW] Add LEFT border only to the first column to complete the box look without doubling lines */
-    .fc .fc-col-header-cell:first-child,
-    .fc .fc-daygrid-day:first-child,
-    .fc-col-header-cell:first-child,
-    .fc-daygrid-day:first-child {
-        border-left: 1px solid #ddd !important;
     }
 
     /* Force TOP border only on the header row if needed (usually handled by collapse + row rules) */
     /* Ensuring the very top row has a boundary */
     .fc-scrollgrid-section-header .fc-col-header-cell {
-        border-top: 1px solid #ddd !important;
+        border-top: 1px solid #999 !important;
     }
 
     /* Ensure text visibility */
@@ -261,9 +254,35 @@
     }
 
     .calendar-cell-header {
+        position: relative !important; /* Required for triangle absolute positioning */
         padding-top: 4px !important;
-        width: 100% !important; /* [FIX] Ensure header fills the width */
+        /* [FIX] Narrow the background by 2px to prevent it from overlapping/thinning borders */
+        width: calc(100% - 2px) !important;
+        margin: 0 auto !important;
         margin-bottom: 2px !important;
+        z-index: 1 !important; /* [FIX] Move below grid borders */
+    }
+
+    /* [NEW] Restore Triangle indicator for days in the current month */
+    .fc-daygrid-day:not(.fc-day-other):not(.is-other-month) .calendar-cell-header::before {
+        content: "" !important;
+        position: absolute !important;
+        top: 0 !important;
+        left: -1px !important; /* [FIX] Align with left border line */
+        width: 0 !important;
+        height: 0 !important;
+        border-style: solid !important;
+        border-width: 10px 10px 0 0 !important;
+        border-color: #6b7280 transparent transparent transparent !important;
+        display: block !important;
+        z-index: 10 !important;
+    }
+
+    /* Red triangle for Sat/Sun/Holidays (only in current month) */
+    .fc-day-sun:not(.fc-day-other):not(.is-other-month) .calendar-cell-header::before,
+    .fc-day-sat:not(.fc-day-other):not(.is-other-month) .calendar-cell-header::before,
+    .is-holiday:not(.fc-day-other):not(.is-other-month) .calendar-cell-header::before {
+        border-top-color: #dc2626 !important;
     }
 
     /* Prevent breaking inside weeks */
