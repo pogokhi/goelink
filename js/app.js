@@ -155,19 +155,27 @@ const App = {
             // 3. Check Auth State (Now with correct currentYear)
             await this.checkAuth();
 
-            // [RESTORE STATE] Check if we just reloaded
-            const savedDate = sessionStorage.getItem('pogok_reload_date');
-            const savedView = sessionStorage.getItem('pogok_reload_view');
-            if (savedDate) {
-                this.state.initialDate = new Date(savedDate);
-                sessionStorage.removeItem('pogok_reload_date'); // Consume
-                console.log("[Init] Restored Date:", this.state.initialDate);
-            }
-            if (savedView) {
-                // If view logic supports explicit initial view, we can use it, 
-                // but usually URL hash or default handles it.
-                // We just rely on state here.
-            }
+            // [CRITICAL UX FIX] Handle Tab Background Disconnection (Sleep Mode)
+            // If the user leaves the tab for >1 hour, the Supabase token expires silently.
+            // When they return (visibilitychange), we forcefully check the session.
+            // If it's dead, we reload the page to snap the UI back to a clean "Login" state.
+            document.addEventListener('visibilitychange', async () => {
+                if (document.visibilityState === 'visible') {
+                    // Only check if we think we are logged in.
+                    if (this.state.user) {
+                        try {
+                            const { data: { session }, error } = await window.SupabaseClient.supabase.auth.getSession();
+                            // If there is no session returned, it expired while the tab was hidden.
+                            if (error || !session) {
+                                console.warn("[Auth] Session expired in background. Forcing reload to reset UI.");
+                                window.location.reload();
+                            }
+                        } catch (e) {
+                            console.error("[Auth] Background session check failed", e);
+                        }
+                    }
+                }
+            });
 
             // [FIX] Event Delegation for Logout Button (Robustness)
             const authContainer = document.getElementById('header-auth-btn');
@@ -195,8 +203,22 @@ const App = {
             });
 
             // 5. Load Initial View
+            // [RESTORE STATE] Check if we just reloaded due to session expiration
+            const savedDate = sessionStorage.getItem('pogok_reload_date');
+            const savedView = sessionStorage.getItem('pogok_reload_view');
+            
+            if (savedDate) {
+                this.state.initialDate = new Date(savedDate);
+                sessionStorage.removeItem('pogok_reload_date');
+                console.log("[Init] Restored Date:", this.state.initialDate);
+            }
+
             let initialView = 'calendar';
-            if (window.location.hash) {
+            if (savedView && ['calendar', 'login', 'admin', 'dept_list', 'list'].includes(savedView)) {
+                initialView = savedView;
+                sessionStorage.removeItem('pogok_reload_view');
+                console.log("[Init] Restored View:", initialView);
+            } else if (window.location.hash) {
                 const hashView = window.location.hash.substring(1);
                 if (['calendar', 'login', 'admin', 'dept_list', 'list'].includes(hashView)) {
                     initialView = hashView;
@@ -290,7 +312,7 @@ const App = {
     },
 
     refreshCurrentView: function () {
-        // [NUCLEAR OPTION] Full Reload with State
+        // [SOFT REFRESH] Update without full page reload
         // Save state
         const v = this.state.viewMode || 'calendar';
         let d = new Date();
@@ -303,13 +325,17 @@ const App = {
             } else if (this.state.initialDate) {
                 d = new Date(this.state.initialDate);
             }
-        } catch (e) { }
+        } catch (e) { console.warn("Date capture failed during refresh:", e); }
 
-        sessionStorage.setItem('pogok_reload_date', d.toISOString());
-        sessionStorage.setItem('pogok_reload_view', v);
+        // Clear schedules cache so it fetches fresh data
+        this.state.cache.schedules = null;
+        console.log(`[Refresh] Soft refreshing view: ${v}`);
 
-        // Force Reload
-        window.location.reload();
+        if (v === 'calendar' && this.state.calendar) {
+            this.refreshCalendarData(); // [FIX] Call the actual custom data fetching pipeline instead of non-functional refetchEvents
+        } else {
+            this.loadView(v);
+        }
     },
 
     checkAuth: async function () {
@@ -4178,6 +4204,8 @@ const App = {
     },
 
     fetchSchedules: async function () {
+        // Fetch all schedules page-by-page to prevent Supabase/PostgREST from silently truncating
+        // results to 1000 rows, which would cause newly saved schedules to randomly disappear from UI.
         let allData = [];
         let page = 0;
         const pageSize = 1000;
@@ -4666,6 +4694,9 @@ const App = {
                 includeHolidaysWrapper.classList.remove('hidden');
             }
 
+            // [BUGFIX] Explicitly clear schedule-id to prevent overwriting previous saves
+            document.getElementById('schedule-id').value = '';
+
             includeHolidaysCheck.checked = false; // Default: unchecked
             if (defaultDate) {
                 startInput.value = defaultDate;
@@ -4732,7 +4763,17 @@ const App = {
         form.onsubmit = async (e) => {
             e.preventDefault();
 
-            const scheduleId = document.getElementById('schedule-id').value;
+            try {
+                // [CRITICAL FIX] Check session validity before saving to prevent infinite hang
+                // If the token expired in a background tab, this will catch it before sending the update request.
+                const { data: { session }, error: sessionError } = await window.SupabaseClient.supabase.auth.getSession();
+                if (sessionError || !session) {
+                    alert('로그인 세션이 만료되었습니다. 다시 로그인해 주세요.');
+                    window.location.reload();
+                    return;
+                }
+
+                const scheduleId = document.getElementById('schedule-id').value;
             const selectedDeptOption = deptSelect.options[deptSelect.selectedIndex];
             const deptName = selectedDeptOption ? selectedDeptOption.text : '';
 
@@ -4806,16 +4847,11 @@ const App = {
                 });
             }
 
-            try {
                 console.log("[Save] Starting save operation. isRecurring:", isRecurring, "scheduleId:", scheduleId);
                 console.log("[Save] Payload Preview:", batchData[0]);
 
-                // 1. [SECURITY/ROBUSTNESS] Explicitly check/refresh session before database operation
-                console.log("[Save] Validating session...");
-                const { data: { session }, error: authErr } = await window.SupabaseClient.supabase.auth.getSession();
-                if (authErr || !session) {
-                    throw new Error('인증 세션이 유효하지 않거나 만료되었습니다. 다시 로그인해 주세요.');
-                }
+                // 1. [REMOVED]
+                console.log("[Save] Preparing payload...");
 
                 let result;
                 if (scheduleId) {
@@ -4844,7 +4880,11 @@ const App = {
                         const copy = { ...d };
                         if (copy.dept_id === "") copy.dept_id = null;
                         if (copy.dept_id !== undefined && copy.dept_id !== null) {
-                            copy.dept_id = parseInt(copy.dept_id);
+                            if (isNaN(parseInt(copy.dept_id))) {
+                                copy.dept_id = null;
+                            } else {
+                                copy.dept_id = parseInt(copy.dept_id);
+                            }
                         }
                         return copy;
                     });
@@ -5968,7 +6008,7 @@ const App = {
         const needsSchedules = !this.state.cache.schedules;
 
         const promises = [];
-        if (missingAYs.length > 0) promises.push(window.SupabaseClient.supabase.from('basic_schedules').select('*').in('academic_year', missingAYs));
+        if (missingAYs.length > 0) promises.push(window.SupabaseClient.supabase.from('basic_schedules').select('*').in('academic_year', missingAYs).limit(5000));
         else promises.push(Promise.resolve({ data: [] }));
 
         if (needsDepts) promises.push(window.SupabaseClient.supabase.from('departments').select('*').order('sort_order', { ascending: true }));
